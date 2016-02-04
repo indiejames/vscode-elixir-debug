@@ -29,7 +29,7 @@ class ElixirDebugSession extends DebugSession {
 	private __iexReadyFlag = false;
 	private __bufferClearedFlag = false;
 	// Buffer for output from evaluating things in the REPL
-	private __evalBuffer: string[];
+	private __evalBuffer: DebugProtocol.EvaluateResponse[];
 
 	private __currentLine: number;
 	private get _currentLine() : number {
@@ -51,6 +51,7 @@ class ElixirDebugSession extends DebugSession {
 		this._sourceLines = [];
 		this._currentLine = 0;
 		this._breakPoints = {};
+		this.__evalBuffer = [];
 		this._variableHandles = new Handles<string>();
 	}
 
@@ -76,29 +77,23 @@ class ElixirDebugSession extends DebugSession {
 		this.__child = spawn('/bin/bash', ["-c", "iex"]);
 
 
-  		// this.__child.stdout.on('data', (data) => {
-    	// 	var output = '' + data;
-		// 	if (this.__iexReadyFlag) {
-		// 		this.__evalBuffer.push(data);
-		// 	} else {
-		// 		this.__iexReadyFlag = true;
-		// 	}
+  		this.__child.stdout.on('data', (data) => {
+    		var output = '' + data;
+			if (this.__iexReadyFlag) {
+				// this.__evalBuffer.push(output);
+				var response = this.__evalBuffer.pop();
+				if (response){
+					response.body.result = output;
+					this.sendResponse(response);
+				}
 
-    	// 	console.log(output);
+			} else {
+				this.__iexReadyFlag = true;
+			}
 
-    		//output_channel.append('' + data);
+    		console.log(output);
 
-
-    		// if (output.match(/iex.*>/g)) {
-			// 	output_channel.append("READY\n");
-			// 	if (!did_write){
-			// 		did_write = true;
-			// 		this.__child.stdin.write("x = 4\n\n");
-			// 	}
-
-    		// }
-
-		// });
+		});
 
   		this.__child.stderr.on('data', (data) => {
   			console.log(`stderr: ${data}`);
@@ -298,25 +293,22 @@ class ElixirDebugSession extends DebugSession {
 		return rval;
 	}
 
-	protected evaluateElixirCode(code: string): string {
+	protected evaluateElixirCode(code: string): void {
 		this.__child.stdin.write(code + "\n");
-
-		var rval: string = this.readFromChildProcess();
-
-		return rval;
 	}
 
 	protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
 
 
-		var evalue: string = this.evaluateElixirCode(args.expression);
+		this.evaluateElixirCode(args.expression);
 
 		response.body = {
 
-			result: evalue,
+			result: null,
 			variablesReference: 0
 		};
-		this.sendResponse(response);
+
+		this.__evalBuffer.push(response);
 	}
 }
 
