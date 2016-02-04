@@ -2,28 +2,34 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
-"use strict";
-
 import {DebugSession, InitializedEvent, TerminatedEvent, StoppedEvent, OutputEvent, Thread, StackFrame, Scope, Source, Handles} from 'vscode-debugadapter';
 import {DebugProtocol} from 'vscode-debugprotocol';
 import {readFileSync} from 'fs';
 import {basename} from 'path';
+import {spawn} from 'child_process';
 
 
 /**
- * This interface should always match the schema found in the mock-debug extension manifest.
+ * This interface should always match the schema found in the elixir-debug extension manifest.
  */
 export interface LaunchRequestArguments {
-	/** An absolute path to the program to debug. */
-	program: string;
+	/** An absolute path to the mix file of the program to debug. */
+	mixFile: string;
 	/** Automatically stop target after launch. If not specified, target does not stop. */
 	stopOnEntry?: boolean;
 }
 
-class MockDebugSession extends DebugSession {
+class ElixirDebugSession extends DebugSession {
 
 	// we don't support multiple threads, so we can use a hardcoded ID for the default thread
 	private static THREAD_ID = 1;
+
+	// Elixir REPL process
+	private __child: any;
+	private __iexReadyFlag = false;
+	private __bufferClearedFlag = false;
+	// Buffer for output from evaluating things in the REPL
+	private __evalBuffer: string[];
 
 	private __currentLine: number;
 	private get _currentLine() : number {
@@ -39,7 +45,6 @@ class MockDebugSession extends DebugSession {
 	private _breakPoints: any;
 	private _variableHandles: Handles<string>;
 
-
 	public constructor(debuggerLinesStartAt1: boolean, isServer: boolean = false) {
 		super(debuggerLinesStartAt1, isServer);
 		this._sourceFile = null;
@@ -50,26 +55,71 @@ class MockDebugSession extends DebugSession {
 	}
 
 	protected initializeRequest(response: DebugProtocol.InitializeResponse, args: DebugProtocol.InitializeRequestArguments): void {
+		this.sendResponse(response);
 
-		// announce that we are ready to accept breakpoints -> fire the initialized event to give UI a chance to set breakpoints
+		// now we are ready to accept breakpoints -> fire the initialized event to give UI a chance to set breakpoints
 		this.sendEvent(new InitializedEvent());
+	}
 
-		super.initializeRequest(response, args);
+	protected disconnectRequest(response: DebugProtocol.DisconnectResponse, args: DebugProtocol.DisconnectArguments): void {
+		this.__child.kill('SIGKILL');
+		super.disconnectRequest(response, args);
 	}
 
 	protected launchRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments): void {
-		this._sourceFile = args.program;
+		// Start a REPL using the mix file for the given project
+		console.log("ELIXIR!!!")
+
+		this._sourceFile = args.mixFile;
 		this._sourceLines = readFileSync(this._sourceFile).toString().split('\n');
+
+		this.__child = spawn('/bin/bash', ["-c", "iex"]);
+
+
+  		// this.__child.stdout.on('data', (data) => {
+    	// 	var output = '' + data;
+		// 	if (this.__iexReadyFlag) {
+		// 		this.__evalBuffer.push(data);
+		// 	} else {
+		// 		this.__iexReadyFlag = true;
+		// 	}
+
+    	// 	console.log(output);
+
+    		//output_channel.append('' + data);
+
+
+    		// if (output.match(/iex.*>/g)) {
+			// 	output_channel.append("READY\n");
+			// 	if (!did_write){
+			// 		did_write = true;
+			// 		this.__child.stdin.write("x = 4\n\n");
+			// 	}
+
+    		// }
+
+		// });
+
+  		this.__child.stderr.on('data', (data) => {
+  			console.log(`stderr: ${data}`);
+		});
+
+		this.__child.on('close', (code) => {
+			if (code !== 0) {
+				console.log(`iex process exited with code ${code}`);
+			}
+			console.log("iex closed");
+		});
 
 		if (args.stopOnEntry) {
 			this._currentLine = 0;
 			this.sendResponse(response);
 
 			// we stop on the first line
-			this.sendEvent(new StoppedEvent("entry", MockDebugSession.THREAD_ID));
+			this.sendEvent(new StoppedEvent("entry", ElixirDebugSession.THREAD_ID));
 		} else {
 			// we just start to run until we hit a breakpoint or an exception
-			this.continueRequest(response, { threadId: MockDebugSession.THREAD_ID });
+			this.continueRequest(response, { threadId: ElixirDebugSession.THREAD_ID });
 		}
 	}
 
@@ -114,7 +164,7 @@ class MockDebugSession extends DebugSession {
 		// return the default thread
 		response.body = {
 			threads: [
-				new Thread(MockDebugSession.THREAD_ID, "thread 1")
+				new Thread(ElixirDebugSession.THREAD_ID, "thread 1")
 			]
 		};
 		this.sendResponse(response);
@@ -191,15 +241,15 @@ class MockDebugSession extends DebugSession {
 			if (lines && lines.indexOf(ln) >= 0) {
 				this._currentLine = ln;
 				this.sendResponse(response);
-				this.sendEvent(new StoppedEvent("breakpoint", MockDebugSession.THREAD_ID));
+				this.sendEvent(new StoppedEvent("step", ElixirDebugSession.THREAD_ID));
 				return;
 			}
 			// if word 'exception' found in source -> throw exception
 			if (this._sourceLines[ln].indexOf("exception") >= 0) {
 				this._currentLine = ln;
 				this.sendResponse(response);
-				this.sendEvent(new StoppedEvent("exception", MockDebugSession.THREAD_ID));
-				this.sendEvent(new OutputEvent(`exception in line: ${ln}\n`, 'stderr'));
+				this.sendEvent(new StoppedEvent("exception", ElixirDebugSession.THREAD_ID));
+				this.sendEvent(new OutputEvent(`exception in line: ${ln}\nABC`, 'stderr'));
 				return;
 			}
 		}
@@ -214,7 +264,7 @@ class MockDebugSession extends DebugSession {
 			if (this._sourceLines[ln].trim().length > 0) {   // find next non-empty line
 				this._currentLine = ln;
 				this.sendResponse(response);
-				this.sendEvent(new StoppedEvent("step", MockDebugSession.THREAD_ID));
+				this.sendEvent(new StoppedEvent("step", ElixirDebugSession.THREAD_ID));
 				return;
 			}
 		}
@@ -223,13 +273,51 @@ class MockDebugSession extends DebugSession {
 		this.sendEvent(new TerminatedEvent());
 	}
 
+	protected readFromChildProcess(): string {
+		var buf: string = '';
+		var output = null;
+
+		// Drain the stdout of the child process the first time to get rid of the startup message
+		if (!this.__bufferClearedFlag){
+
+			for (output = ''; output = '' + this.__child.stdout.read(); buf.search(/iex\(\d*\)/) == -1) {
+				buf = buf + output;
+			}
+
+			buf = '';
+
+			this.__bufferClearedFlag = true;
+		}
+
+		for (output = ''; output = '' + this.__child.stdout.read(); buf.search(/iex\(\d*\)/) == -1) {
+			buf = buf + output;
+		}
+
+		var rval: string = buf.replace(/iex\(\d*\)>/, '');
+
+		return rval;
+	}
+
+	protected evaluateElixirCode(code: string): string {
+		this.__child.stdin.write(code + "\n");
+
+		var rval: string = this.readFromChildProcess();
+
+		return rval;
+	}
+
 	protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
+
+
+		var evalue: string = this.evaluateElixirCode(args.expression);
+
 		response.body = {
-			result: `evaluate(${args.expression})`,
+
+			result: evalue,
 			variablesReference: 0
 		};
 		this.sendResponse(response);
 	}
 }
 
-DebugSession.run(MockDebugSession);
+DebugSession.run(ElixirDebugSession);
