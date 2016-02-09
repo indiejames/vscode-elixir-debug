@@ -12,7 +12,7 @@ import {DebugProtocol} from 'vscode-debugprotocol';
 
 suite('Node Debug Adapter', () => {
 
-	const DEBUG_ADAPTER = './out/mockDebug.js';
+	const DEBUG_ADAPTER = './out/elixirDebug.js';
 
 	const PROJECT_ROOT = Path.join(__dirname, '../../');
 	const PROGRAM = Path.join(PROJECT_ROOT, 'src/tests/data/test.md');

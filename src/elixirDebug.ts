@@ -2,10 +2,11 @@
  * Copyright (C) Microsoft Corporation. All rights reserved.
  *--------------------------------------------------------*/
 
-import {DebugSession, InitializedEvent, TerminatedEvent, StoppedEvent, OutputEvent, Thread, StackFrame, Scope, Source, Handles} from 'vscode-debugadapter';
+import {DebugSession, Variable, InitializedEvent, TerminatedEvent, StoppedEvent, OutputEvent, Thread, StackFrame, Scope, Source, Handles} from 'vscode-debugadapter';
 import {DebugProtocol} from 'vscode-debugprotocol';
+import ManifestParser from './manifestParser';
 import {readFileSync} from 'fs';
-import {basename} from 'path';
+import {basename, dirname} from 'path';
 import {spawn} from 'child_process';
 
 
@@ -69,12 +70,17 @@ class ElixirDebugSession extends DebugSession {
 
 	protected launchRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments): void {
 		// Start a REPL using the mix file for the given project
-		console.log("ELIXIR!!!")
+		console.log("ELIXIR!!!");
+		var cwd = args["cwd"];
+		var mixFile = args.mixFile || args["cwd"] + "/mix.exs";
+		//var mixfile = args.mixFile || args.cwd + "/mix.exs";
+		this._sourceFile = mixFile;
 
-		this._sourceFile = args.mixFile;
 		this._sourceLines = readFileSync(this._sourceFile).toString().split('\n');
 
-		this.__child = spawn('/bin/bash', ["-c", "iex"]);
+		var manifest = ManifestParser.parseManifest("/Users/jnorton/vscode/elixir-debug/src/tests/data/.compile.elixir");
+
+		this.__child = spawn('/bin/bash', ["-c", "iex -S mix"], {cwd: cwd});
 
 
   		this.__child.stdout.on('data', (data) => {
@@ -84,6 +90,8 @@ class ElixirDebugSession extends DebugSession {
 				var response = this.__evalBuffer.pop();
 				if (response){
 					response.body.result = output;
+					response.body.result = "<tuple>(4)";
+					response.body.variablesReference = 4;
 					this.sendResponse(response);
 				}
 
@@ -198,29 +206,42 @@ class ElixirDebugSession extends DebugSession {
 	protected variablesRequest(response: DebugProtocol.VariablesResponse, args: DebugProtocol.VariablesArguments): void {
 
 		const variables = [];
-		const id = this._variableHandles.get(args.variablesReference);
-		if (id != null) {
-			variables.push({
-				name: id + "_i",
-				value: "123",
-				variablesReference: 0
-			});
-			variables.push({
-				name: id + "_f",
-				value: "3.14",
-				variablesReference: 0
-			});
-			variables.push({
-				name: id + "_s",
-				value: "hello world",
-				variablesReference: 0
-			});
-			variables.push({
-				name: id + "_o",
-				value: "Object",
-				variablesReference: this._variableHandles.create("object_")
-			});
-		}
+		// const id = this._variableHandles.get(args.variablesReference);
+		// if (id != null) {
+		// 	variables.push({
+		// 		name: id + "_i",
+		// 		value: "123",
+		// 		variablesReference: 0
+		// 	});
+		// 	variables.push({
+		// 		name: id + "_f",
+		// 		value: "3.14",
+		// 		variablesReference: 0
+		// 	});
+		// 	variables.push({
+		// 		name: id + "_s",
+		// 		value: "hello world",
+		// 		variablesReference: 0
+		// 	});
+		// 	variables.push({
+		// 		name: id + "_o",
+		// 		value: "Object",
+		// 		variablesReference: this._variableHandles.create("object_")
+		// 	});
+		// }
+
+		variables.push({name: "0",
+						value: "123",
+						variablesReference: 0},
+						{name: "1",
+						value: "456",
+						variablesReference: 0},
+						{name: "2",
+						value: "789",
+						variablesReference: 0},
+						{name: "3",
+						value: "ABC",
+						variablesReference: 0});
 
 		response.body = {
 			variables: variables
