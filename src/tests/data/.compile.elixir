@@ -1,0 +1,6 @@
+v2.
+{<<"_build/dev/lib/calculator/ebin/Elixir.Calculator.beam">>,
+ 'Elixir.Calculator',module,<<"lib/calculator.ex">>,
+ ['Elixir.Kernel','Elixir.Module'],
+ [erlang,'Elixir.IO'],
+ [],nil}.

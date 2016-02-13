@@ -23,7 +23,11 @@
     "url": "https://github.com/Microsoft/vscode-mock-debug/issues"
   },
   "dependencies": {
+    "find-file-sync": "0.0.4",
+    "findit": "^2.0.0",
+    "fs-finder": "^1.8.1",
     "glob": "^6.0.4",
+    "node-find-files": "0.0.4",
     "vscode-debugadapter": "^1.0.1",
     "vscode-debugprotocol": "^1.0.1"
   },
