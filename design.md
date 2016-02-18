@@ -25,7 +25,21 @@
 
 ## Architecture
 
-* Event queue
+* Event handler queue
+  * When a request comes in the handler method pushes a lambda (handler) on the handler queue.
+  This function has the following form:
+  ``` typescript
+  var handler = (data: string) => {
+	// do something with the data and construct the response
+	// ...
+
+	this.sendResponse(response);
+  }
+  ```
+* Eval queue
+  * When an eval request comes in it is split on newlines and all but the first piece is added to the eval
+  queue. The first piece is executed in the REPL. Each succeeding piece is pulled from the eval buffer
+  and executed in the REPL output handler.
 * Utility functions for handling REPL output
   * Data structure mapping to VS Code compound variables
 
@@ -42,11 +56,11 @@
 Need to initialize REPL
 * Start REPL
 * In REPL output handler
-  *
+
 
 ## Assumptions
 
-* REPL process can receive input (buffered) before it has responded from previous input
+* REPL process can receive input (buffered) before it has responded from previous input (**Update:** I don't think this is true.)
 
 
 

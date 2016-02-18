@@ -52,8 +52,9 @@ class ElixirDebugSession extends DebugSession {
 	private _requestHandlerQueue: { (data: string): void; }[];
 	// Buffer for output from REPL
 	private _replBuffer: string[];
-	// Buffer for output from evaluating things in the REPL
-	private __evalBuffer: DebugProtocol.EvaluateResponse[];
+	// Buffer for things to be evaluated in the REPL
+	private _evalBuffer: string[][];
+	private _evalIndex: number;
 
 	private __currentLine: number;
 	private get _currentLine() : number {
@@ -76,7 +77,8 @@ class ElixirDebugSession extends DebugSession {
 		this._sourceLines = [];
 		this._currentLine = 0;
 		this._breakPoints = {};
-		this.__evalBuffer = [];
+		this._evalBuffer = [];
+		this._evalIndex = 0;
 		this._replBuffer = [];
 		this._variableHandles = new Handles<string>();
 		this._requestHandlerQueue = [];
@@ -125,7 +127,6 @@ class ElixirDebugSession extends DebugSession {
 						this._debuggerState = DebuggerState.REPL_READY
 					}
 
-
 					break;
 
 				case DebuggerState.REPL_READY:
@@ -138,11 +139,28 @@ class ElixirDebugSession extends DebugSession {
 					break;
 
 				default:
-					// REPL has responded - let request handler handle response
-					var handler = this._requestHandlerQueue.shift();
-					if (handler) {
-						handler(output);
+					// REPL has responded - if there is anymore code to evaluate, send it to the REPL,
+					// otherwise let request handler handle the response
+
+					// TODO - add formatting of output here
+					if (this._evalBuffer.length > 0){
+						var codeArray = this._evalBuffer[0];
+						if (this._evalIndex < codeArray.length){
+							// send the line of code to the REPL
+							this.__child.stdin.write(codeArray[0] + "\n");
+							this._evalIndex++;
+						} else {
+							// remove the code array from the eval queue and reset the index
+							this._evalBuffer.shift();
+							this._evalIndex = 0;
+
+							var handler = this._requestHandlerQueue.shift();
+							if (handler) {
+								handler(output);
+							}
+						}
 					}
+
 					break;
 			}
 
@@ -387,8 +405,20 @@ class ElixirDebugSession extends DebugSession {
 	}
 
 
+	//////////////////////////////////////////////////////////////////////////////////////
+	//
+	// Queue up code to be evaluated in the REPL
+	//
+	/////////////////////////////////////////////////////////////////////////////////////
+
 	protected evaluateElixirCode(code: string): void {
-		this.__child.stdin.write(code + "\n");
+
+		var codeArray = code.split("\n");
+
+		this._evalBuffer.push(codeArray);
+
+		// trick the response handler into processing this
+		this.replResponseHandler("iex(5)>");
 	}
 
 	protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
@@ -411,7 +441,6 @@ class ElixirDebugSession extends DebugSession {
 
 		this._requestHandlerQueue.push(handler);
 
-		//this.__evalBuffer.push(response);
 	}
 }
 
