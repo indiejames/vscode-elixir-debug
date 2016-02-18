@@ -11,10 +11,12 @@ import {spawn} from 'child_process';
 import DebugEx from './debugEx';
 
 // The debug module to run in the REPL
-var debugStr = readFileSync(__dirname + sep + "elixir_debug.ex");
+var debugStrArray = (readFileSync(__dirname + sep + "elixir_debug.ex") + "").split(/\n/);
+var debugStrIndex = 0;
 
 // Regex to detect end of output from REPL.
 var replPromptRegex = /\(\d*\)>\s*$/;
+var replPromptIncRegex = /^\.\.\.\(\d*\)>\s/;
 
 /**
  * This interface should always match the schema found in the elixir-debug extension manifest.
@@ -92,10 +94,18 @@ class ElixirDebugSession extends DebugSession {
 		super.disconnectRequest(response, args);
 	}
 
-	// Handles data coming from the REPL
+	///////////////////////////////////////////////////////////////////////////////////////
+	//
+	//    REPL response handler
+	//
+	//    Handles data coming from the REPL and sets the current state of the debugger
+	//
+	///////////////////////////////////////////////////////////////////////////////////////
+
 	protected replResponseHandler(data: string): void {
+
 		// read until we reach the end which should have a prompt
-		if(replPromptRegex.test(data)) {
+		if(replPromptRegex.test(data) || replPromptIncRegex.test(data)) {
 			this._replBuffer.push(data);
 			var output = this._replBuffer.join("\n");
 			this._replBuffer = [];
@@ -103,10 +113,19 @@ class ElixirDebugSession extends DebugSession {
 			switch (this._debuggerState) {
 				case DebuggerState.REPL_STARTED:
 					// REPL is responding with it's init message - send it the elixir debugger code
+					if (debugStrIndex < debugStrArray.length) {
+						var debug = debugStrArray[debugStrIndex];
+						this.__child.stdin.write(debug + "\n");
 
-					//this.__child.stdin.write(debugStr + "\n");
-					this.__child.stdin.write("y=10\n");
-					this._debuggerState = DebuggerState.REPL_READY
+					}
+
+					debugStrIndex++;
+
+					if (debugStrIndex >= debugStrArray.length) {
+						this._debuggerState = DebuggerState.REPL_READY
+					}
+
+
 					break;
 
 				case DebuggerState.REPL_READY:
@@ -133,6 +152,8 @@ class ElixirDebugSession extends DebugSession {
 		}
 
 	}
+
+	// End REPL Response Handler /////////////////////////////////////////////////////////////
 
 	protected launchRequest(response: DebugProtocol.LaunchResponse, args: LaunchRequestArguments): void {
 		// Start a REPL using the mix file for the given project
@@ -184,7 +205,9 @@ class ElixirDebugSession extends DebugSession {
 
 		this._debuggerState = DebuggerState.REPL_STARTED;
 
-		var handler = (data: string) => {
+		// This function will be called when the REPL has repsonded after it starts up.
+		// We don't use the first argument in this case - most handlers would.
+		var handler = (_data: string) => {
 			if (args.stopOnEntry) {
 				this._currentLine = 0;
 				this.sendResponse(response);
