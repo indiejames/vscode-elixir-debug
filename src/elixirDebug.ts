@@ -147,7 +147,7 @@ class ElixirDebugSession extends DebugSession {
 						var codeArray = this._evalBuffer[0];
 						if (this._evalIndex < codeArray.length){
 							// send the line of code to the REPL
-							this.__child.stdin.write(codeArray[0] + "\n");
+							this.__child.stdin.write(codeArray[this._evalIndex] + "\n");
 							this._evalIndex++;
 						} else {
 							// remove the code array from the eval queue and reset the index
@@ -418,11 +418,13 @@ class ElixirDebugSession extends DebugSession {
 		this._evalBuffer.push(codeArray);
 
 		// trick the response handler into processing this
+		// FIXME - make this better
 		this.replResponseHandler("iex(5)>");
 	}
 
 	protected evaluateRequest(response: DebugProtocol.EvaluateResponse, args: DebugProtocol.EvaluateArguments): void {
 
+		// TEST CODE this.evaluateElixirCode("defmodule Foo do\ndef foo do\n\"foo\"\nend\nend");
 
 		this.evaluateElixirCode(args.expression);
 
@@ -433,9 +435,9 @@ class ElixirDebugSession extends DebugSession {
 		};
 
 		var handler = (data: string) => {
+			// TODO add support for formatting output
 			response.body.result = data;
-			// response.body.result = "<tuple>(4)";
-			// response.body.variablesReference = 4;
+
 			this.sendResponse(response);
 		}
 
